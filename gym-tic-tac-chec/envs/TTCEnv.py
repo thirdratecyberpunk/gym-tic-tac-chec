@@ -11,6 +11,7 @@ uniDict = {
 
 pieces_to_ids = {
 "p" : 1, "r": 2, "n": 3, "b": 4,
+"." : 0,
 "P" : -1, "R": -2, "N": -3, "B": -4
 }
 
@@ -23,7 +24,7 @@ AGENT POLICY
 def make_random_policy(np_random):
 	def random_policy(state):
 		opp_player = -1
-		moves = ChessEnv.get_possible_moves(state, opp_player)
+		moves = TTCEnv.get_possible_moves(state, opp_player)
 		# No moves left
 		if len(moves) == 0:
 			return "resign"
@@ -320,7 +321,7 @@ class TTCEnv(gym.Env):
 		# TODO: check if this logic breaks when placing a pawn on the back row
 		# for the first time
 		if TTCEnv.ids_to_pieces[piece_id][0].lower() == 'p':
-			if (new_pos[0] == 4 || new_pos[0] == 0):
+			if ((new_pos[0] == 4|| new_pos[0] == 0):
 				new_state['pawn_direction'][player] *= -1
 
 		new_state['board'] = board
@@ -328,13 +329,293 @@ class TTCEnv(gym.Env):
 
 	@staticmethod
 	def get_possible_actions(state, player):
-		moves = ChessEnv.get_possible_moves(state, player)
-		return [ChessEnv.move_to_actions(m) for m in moves]
+		moves = TTCEnv.get_possible_moves(state, player)
+		return [TTCEnv.move_to_actions(m) for m in moves]
+
+	@staticmethod
+	def get_possible_moves(state, player, attack=False):
+		"""
+		Returns a list of numpy tuples
+		piece_id, position, new_position
+		"""
+		board = state['board']
+		total_moves =  []
+		# add all moves that involve placing a piece onto the board
+		for piece_id in state.captured:
+			moves = get_empty_squares(state, player)
+			for move in moves:
+				total_moves.append({
+				'piece_id': piece_id,
+				'new_pos': move,
+				'type': 'placement'
+				})
+		# add all moves that involve moving a piece on the board
+		for position, piece_id in np.denumerate(board):
+			# for all pieces that are not blank and have player alignment
+			if piece_id != 0 and sign(piece_id) == sign(player):
+				if piece_type == 'r':
+					moves = TTCEnv.rook_actions(state, position, player, attack=attack)
+				elif piece_type == 'b':
+					moves = TTCEnv.bishop_actions(state, position, player, attack=attack)
+				elif piece_type == 'n':
+					moves = TTCEnv.knight_actions(state, position, player, attack=attack)
+				elif piece_type == 'p':
+					moves = TTCEnv.pawn_actions(state, position, player, attack=attack)
+				elif piece_type == '.':
+					moves = []
+					continue
+				else:
+					raise Exception("ERROR - inexistent piece type ")
+			for move in moves:
+				total_moves.append({
+				'piece_id': piece_id,
+				'pos': position,
+				'new_pos': move,
+				'type': 'move'
+				})
+			else:
+				continue
+			return total_moves
 
 	@staticmethod
 	def get_empty_squares(state, player):
+		"""
+		Returns all empty tiles that could have a piece placed on them
+		"""
 		empty_squares = []
 		for index, x in np.ndenumerate(state['board']):
 			if x == ".":
 				empty_squares.add(index)
 		return empty_squares
+
+	@staticmethod
+	def rook_moves(state, position, player):
+		"""
+		ROOK ACTIONS
+		------------
+		"""
+		pos = np.array(position)
+		go_to = []
+
+		for i in [-1, +1]:
+			step = np.array([i, 0])
+			go_to += TTCEnv.iterative_steps(state, player, pos, step, attack=attack)
+
+		for j in [-1, +1]:
+			step = np.array([0, j])
+			go_to += TTCEnv.iterative_steps(state, player, pos, step, attack=attack)
+
+		return go_to
+
+	@staticmethod
+	def bishop_actions(state, position, player, attack=False):
+		"""
+		BISHOP ACTIONS
+		--------------
+		"""
+		pos = np.array(position)
+		go_to = []
+
+		for i in [-1, +1]:
+			for j in [-1, +1]:
+				step = np.array([i, j])
+				go_to += TTCEnv.iterative_steps(state, player, pos, step, attack=attack)
+		return go_to
+
+	@staticmethod
+	def iterative_steps(state, player, position, step, attack=False):
+		"""
+		Used to calculate Bishop and Rook moves
+		"""
+		go_to = []
+		pos = np.array(position)
+		step = np.array(step)
+		k = 1
+		while True:
+			move = pos + k*step
+			if attack:
+				add_bool, stop_bool = TTCEnv.attacking_move(state, move, player)
+				if add_bool:
+					go_to.append(move)
+				if stop_bool:
+					break
+				else:
+					k += 1
+			else:
+				add_bool, stop_bool = TTCEnv.playable_move(state, move, player)
+				if add_bool:
+					go_to.append(move)
+				if stop_bool:
+					break
+				else:
+					k += 1
+		return go_to
+
+	@staticmethod
+	def knight_actions(state, position, player, attack=False):
+		"""
+		KNIGHT ACTIONS
+		--------------
+		"""
+		go_to = []
+		pos = np.array(position)
+		moves = [pos + np.array([v,h]) for v in [-2, +2] for h in [-1, +1]]
+		moves += [pos + np.array([v,h]) for v in [-1, +1] for h in [-2, +2]]
+
+		# filter:
+		for m in moves:
+			if attack:
+				add_bool, __ = TTCEnv.attacking_move(state, m, player)
+				if add_bool:
+					go_to.append(m)
+			else:
+				add_bool, __ = TTCEnv.playable_move(state, m, player)
+				if add_bool:
+					go_to.append(m)
+		return go_to
+
+	@staticmethod
+	def pawn_actions(state, position, player, attack=False):
+		"""
+		PAWN ACTIONS
+		------------
+		"""
+		board = state['board']
+		pos = np.array(position)
+		go_to = []
+
+		attack_moves = [
+			pos + np.array([1, -1])*player,
+			pos + np.array([1, +1])*player,
+		]
+
+		step_1 = np.array([1, 0]) * player
+		step_2 = np.array([2, 0]) * player
+
+		if attack:
+			return [m for m in attack_moves if TTCEnv.pos_is_in_board(m)]
+
+		else:
+			# moves only to empty squares
+			# no double move on first placement
+			if board[pos[0]+1*player, pos[1]] == 0:
+				go_to.append(pos + step_1)
+
+			# attacks only opponent's pieces
+			for m in reversed(attack_moves):
+				if not TTCEnv.pos_is_in_board(m):
+					continue
+				elif TTCEnv.is_own_piece(board, m, player):
+					continue
+				elif TTCEnv.is_opponent_piece(board, m, player):
+					go_to.append(m)
+					attack_moves.pop()
+					continue
+				elif board[m[0], m[1]] == 0:
+					continue
+				else:
+					raise Exception("ERROR - PAWN ATTACK MOVES")
+			return go_to
+
+	@staticmethod
+	def playable_move(state, move, player):
+		"""
+		return squares to which a piece can move
+		- empty squares
+		- opponent pieces (excluding king)
+		=> return [<bool> add_move, <bool> break]
+		"""
+		board = state['board']
+		if not TTCEnv.pos_is_in_board(move):
+			return False, True
+		elif TTCEnv.is_own_piece(board, move, player):
+			return False, True
+		elif TTCEnv.is_opponent_piece(board, move, player):
+			return True, True
+		elif board[move[0], move[1]] == 0: # empty square
+			return True, False
+		else:
+			raise Exception('MOVEMENT ERROR \n{} \n{} \n{}'.format(board, move, player))
+
+	@staticmethod
+	def attacking_move(state, move, player):
+		"""
+		return squares that are attacked or defended
+		- empty squares
+		- opponent pieces (opponent king is ignored)
+		- own pieces
+		=> return [<bool> add_move, <bool> break]
+		"""
+		board = state['board']
+		if not TTCEnv.pos_is_in_board(move):
+			return False, True
+		elif TTCEnv.is_own_piece(board, move, player):
+			return True, True
+		elif TTCEnv.is_opponent_piece(board, move, player):
+			return True, True
+		elif board[move[0], move[1]] == 0: # empty square
+			return True, False
+		else:
+			raise Exception('ATTACKING ERROR \n{} \n{} \n{}'.format(board, move, player))
+
+	"""
+	- flatten board
+	- find move in movelist
+	"""
+	@staticmethod
+	def move_in_list(move, move_list):
+		move_list_flat = [TTCEnv.flatten_position(m) for m in move_list]
+		move_flat = TTCEnv.flatten_position(move)
+		return move_flat in move_list_flat
+	@staticmethod
+	def flatten_position(position):
+		x, y = position[0], position[1]
+		return x + y*4
+	@staticmethod
+	def boardise_position(position):
+		x = position % 4
+		y = (position - x)//4
+		return x, y
+
+	@staticmethod
+	def pos_is_in_board(pos):
+		return not (pos[0] < 0 or pos[0] > 4 or pos[1] < 0 or pos[1] > 4)
+
+	@staticmethod
+	def squares_attacked(state, player):
+		opponent_moves = TTCEnv.get_possible_moves(state, -player, attack=True)
+		attacked_pos = [m['new_pos'] for m in opponent_moves]
+		return attacked_pos
+
+	"""
+	Player Pieces
+	"""
+	@staticmethod
+	def is_own_piece(board, position, player):
+		return TTCEnv.is_player_piece(board, position, player)
+	@staticmethod
+	def is_opponent_piece(board, position, player):
+		return TTCEnv.is_player_piece(board, position, -player)
+	@staticmethod
+	def is_player_piece(board, position, player):
+		x, y = position
+		return  (board[x,y] != 0 and sign(board[x,y]) == player)
+
+	@staticmethod
+	def convert_coords(move):
+		"""
+		TODO: include board context:
+		- disambiguation
+		- capture of opponent's piece marked with 'x'
+		"""
+		piece = ChessEnv.ids_to_pieces[move['piece_id']]
+		old_pos = move['pos']
+		new_pos = move['new_pos']
+		alpha = 'abcd'
+		if piece[0].lower() != 'p':
+			piece = piece[0].upper()
+		else:
+			piece = ''
+		return '{}{}{}-{}{}'.format(piece,
+			alpha[old_pos[1]], old_pos[0]+1,
+			alpha[new_pos[1]], new_pos[0]+1)
