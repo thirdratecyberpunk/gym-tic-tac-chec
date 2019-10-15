@@ -1,0 +1,6 @@
+setup.py
+gym_tic_tac_chec.egg-info/PKG-INFO
+gym_tic_tac_chec.egg-info/SOURCES.txt
+gym_tic_tac_chec.egg-info/dependency_links.txt
+gym_tic_tac_chec.egg-info/requires.txt
+gym_tic_tac_chec.egg-info/top_level.txt
