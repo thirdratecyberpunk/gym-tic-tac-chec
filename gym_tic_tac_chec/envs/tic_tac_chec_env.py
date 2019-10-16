@@ -54,7 +54,7 @@ class TTCEnv(gym.Env):
         self.opponent = opponent
         # resets and builds state
         self._seed()
-        self._reset()
+        self.reset()
 
     def _seed(self, seed=None):
         """
@@ -72,7 +72,7 @@ class TTCEnv(gym.Env):
             self.opponent_policy = self.opponent
         return [seed]
 
-    def _step(self, action):
+    def step(self, action):
         """
         Run one timestep of the environment's dynamics. When end of episode
         is reached, reset() should be called to reset the environment's internal state.
@@ -127,7 +127,7 @@ class TTCEnv(gym.Env):
             return self.state, total_reward, self.done, {'state': self.state}
 
 
-    def _reset(self):
+    def reset(self):
         """
         Resets the state of the environment, returning an initial observation.
         Outputs -> observation : the initial observation of the space. (Initial reward is assumed to be 0.)
@@ -341,20 +341,25 @@ class TTCEnv(gym.Env):
         piece_id, position, new_position
         """
         board = state['board']
-        total_moves =  []
+        total_moves = []
         # add all moves that involve placing a piece onto the board
-        for piece_id in state.captured:
-            moves = get_empty_squares(state, player)
-            for move in moves:
+        placements = TTCEnv.get_empty_squares(state, player)
+        for piece_id in state['captured'][player]:
+            for placement in placements:
                 total_moves.append({
                 'piece_id': piece_id,
-                'new_pos': move,
+                'new_pos': placement,
                 'type': 'placement'
                 })
         # add all moves that involve moving a piece on the board
-        for position, piece_id in np.denumerate(board):
+        for position, piece_id in np.ndenumerate(board):
             # for all pieces that are not blank and have player alignment
+            moves = []
             if piece_id != 0 and sign(piece_id) == sign(player):
+                # turns the id into the piece to obtain the moves
+                piece_name = TTCEnv.ids_to_pieces[piece_id]
+                piece_type = piece_name[0].lower()
+                print(piece_type)
                 if piece_type == 'r':
                     moves = TTCEnv.rook_actions(state, position, player, attack=attack)
                 elif piece_type == 'b':
@@ -377,7 +382,7 @@ class TTCEnv(gym.Env):
                 })
             else:
                 continue
-            return total_moves
+        return total_moves
 
     @staticmethod
     def get_empty_squares(state, player):
@@ -386,9 +391,18 @@ class TTCEnv(gym.Env):
         """
         empty_squares = []
         for index, x in np.ndenumerate(state['board']):
-            if x == ".":
-                empty_squares.add(index)
+            # if the square is empty
+            if x == 0:
+                empty_squares.append(index)
         return empty_squares
+
+    @staticmethod
+    def is_board_empty(state,player):
+        """
+        Returns if the board contains no pieces
+        """
+        empty = (all(space == 0 for index, space in np.ndenumerate(state['board'])))
+        return empty
 
     @staticmethod
     def rook_moves(state, position, player):
