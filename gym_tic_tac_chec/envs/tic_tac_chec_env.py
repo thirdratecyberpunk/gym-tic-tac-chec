@@ -43,6 +43,8 @@ class TTCEnv(gym.Env):
     #metadata = {"render.modes": ["human"]}
 
     def __init__(self, player_color=1, opponent="random", log=True):
+        # stores information about board state for logging
+        self.log = log
         # space containing all board states
         self.observation_space = spaces.Box(-4, 4, (4,4))
         # space containing all possible actions
@@ -153,8 +155,35 @@ class TTCEnv(gym.Env):
         self.state['prev_board'] = copy(self.state['board'])
         return self.state
 
+    def player_move(self, player, state, action, render=False, render_msg='Player'):
+        """
+        Returns (state, reward, done)
+        """
+        # Resign
+        if TTCEnv.has_resigned(action):
+            return state, -100, True
+        # Play
+        move = TTCEnv.action_to_move(action, player)
+        new_state, prev_piece, reward = TTCEnv.next_state(
+            copy(state), move, player)
+        # Keep track of movements
+        piece_id = move['piece_id']
+        new_state['kr_moves'][piece_id] += 1
+        # Save material captured
+        if prev_piece != 0:
+            new_state['captured'][player].append(prev_piece)
+        # Save current state
+        self.saved_states = TTCEnv.encode_current_state
+        (state, self.saved_states)
+        # Renders board
+        if render:
+            TTCEnv.render_moves(state, move['piece_id'], [move], mode='human')
+            print(' '*10, '>'*10, render_msg)
+            # self._render()
+        return new_state, reward, False
 
-    def _render(self, mode='human', close=False):
+
+    def render(self, mode='human', close=False):
         return TTCEnv.render_board(self.state, mode=mode, close=close)
 
     @staticmethod
@@ -169,9 +198,9 @@ class TTCEnv(gym.Env):
         outfile.write('-' * 25)
         outfile.write('\n')
 
-        for i in range(7,-1,-1):
+        for i in range(3,-1,-1):
             outfile.write(' {} | '.format(i+1))
-            for j in range(7,-1,-1):
+            for j in range(3,-1,-1):
                 piece = TTCEnv.ids_to_pieces[board[i,j]]
                 figure = uniDict[piece[0]]
                 outfile.write(' {} '.format(figure))
@@ -198,9 +227,9 @@ class TTCEnv(gym.Env):
         outfile.write('-' * 25)
         outfile.write('\n')
 
-        for i in range(7,-1,-1):
+        for i in range(3,-1,-1):
             outfile.write(' {} | '.format(i+1))
-            for j in range(7,-1,-1):
+            for j in range(3,-1,-1):
                 piece = TTCEnv.ids_to_pieces[board[i,j]]
                 figure = uniDict[piece[0]]
 
@@ -271,7 +300,8 @@ class TTCEnv(gym.Env):
         else:
             piece_id = move['piece_id']
             new_pos = move['new_pos']
-            return 16*(abs(piece_id) - 1) + (new_pos[0]*4 + new_pos[1]).item()
+            print (new_pos)
+            return 16*(abs(piece_id) - 1) + (new_pos[0]*4 + new_pos[1])
 
     @staticmethod
     def action_to_move(action, player):
@@ -304,10 +334,11 @@ class TTCEnv(gym.Env):
 
         # find old position
         try:
+            print('move', move)
+            print('piece_id', piece_id)
+            print('board', board)
             old_pos = np.array([x[0] for x in np.where(board == piece_id)])
         except:
-            print('piece_id', piece_id)
-            print(board)
             raise Exception()
         r, c = old_pos[0], old_pos[1]
         board[r, c] = 0
