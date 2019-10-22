@@ -2,6 +2,7 @@ import gym
 from gym import error, spaces, utils
 from gym.utils import seeding
 import numpy as np
+import sys
 
 from copy import copy
 
@@ -41,6 +42,7 @@ class TTCEnv(gym.Env):
     WHITE = 1
     BLACK = -1
     #metadata = {"render.modes": ["human"]}
+    ids_to_pieces = {v: k for k, v in pieces_to_ids.items()}
 
     def __init__(self, player_color=1, opponent="random", log=True):
         # stores information about board state for logging
@@ -168,7 +170,7 @@ class TTCEnv(gym.Env):
             copy(state), move, player)
         # Keep track of movements
         piece_id = move['piece_id']
-        new_state['kr_moves'][piece_id] += 1
+        #new_state['kr_moves'][piece_id] += 1
         # Save material captured
         if prev_piece != 0:
             new_state['captured'][player].append(prev_piece)
@@ -238,10 +240,7 @@ class TTCEnv(gym.Env):
                     outfile.write('<{}>'.format(figure))
                 elif moves_pos and any(np.equal(moves_pos,[i,j]).all(1)):
                     if piece == '.':
-                        if piece_id == TTCEnv.CASTLE_MOVE_ID:
-                            outfile.write('0-0')
-                        else:
-                            outfile.write(' X ')
+                        outfile.write(' X ')
                     else:
                         outfile.write('+{}+'.format(figure))
                 else:
@@ -265,7 +264,7 @@ class TTCEnv(gym.Env):
             for j in range(8):
                 piece_id = board[i][j]
                 player = sign(piece_id)
-                piece_type = TTCEnv.ids_to_pieces[piece_id][0].lower()
+                piece_type = TTCEnv.ids_to_pieces[piece_id[0]].lower()
                 piece_encode = pieces_encoding[piece_type]
                 if piece_encode != 0:
                     piece_encode += 3*(1-player)
@@ -328,37 +327,50 @@ class TTCEnv(gym.Env):
         new_state['prev_board'] = copy(state['board'])
 
         board = copy(new_state['board'])
-        new_pos = move['new_pos']
+        new_pos = np.array(move['new_pos'])
         piece_id = move['piece_id']
         reward = 0
 
-        # find old position
-        try:
-            print('move', move)
-            print('piece_id', piece_id)
-            print('board', board)
+        # if there is an old position (i.e. piece has been moved)
+        # set old position to empty, set new position to piece
+        if (TTCEnv.piece_in_board(board, player, piece_id)):
             old_pos = np.array([x[0] for x in np.where(board == piece_id)])
-        except:
-            raise Exception()
-        r, c = old_pos[0], old_pos[1]
-        board[r, c] = 0
-
-        # replace new position
-        new_pos = np.array(new_pos)
-        r, c = new_pos
-        prev_piece = board[r, c]
-        board[r, c] = piece_id
+            r, c = old_pos[0], old_pos[1]
+            board[r, c] = 0
+            r, c = new_pos
+            prev_piece = board[r, c]
+        # if there isn't an old position (i.e. piece has been placed)
+        # remove piece from captured, set new position to piece
+        else:
+            prev_piece = 0
+        r,c = new_pos
+        board[r,c] = piece_id
 
         # check for pawn reaching the end of the board
         # if pawns reach the end, their direction is inverted
         # TODO: check if this logic breaks when placing a pawn on the back row
         # for the first time
-        if TTCEnv.ids_to_pieces[piece_id][0].lower() == 'p':
-            if ((new_pos[0] == 4) or (new_pos[0] == 0)):
-                new_state['pawn_direction'][player] *= -1
+
+        # piece_name = TTCEnv.ids_to_pieces[piece_id]
+        # piece_type = piece_name[0].lower()
+
+        # if (piece_type == 'p'):
+        #     if ((new_pos[0] == 4) or (new_pos[0] == 0)):
+        #         new_state['pawn_direction'][player] *= -1
 
         new_state['board'] = board
         return new_state, prev_piece, reward
+
+    @staticmethod
+    def piece_in_board(board, player, piece_id):
+        '''
+        Returns whether a given piece exists in a state's board
+        '''
+        piece_instances = np.where(board == piece_id)
+        if (len(piece_instances[0]) == 0 and len(piece_instances[1]) == 0):
+            return False
+        else:
+            return True
 
     @staticmethod
     def get_possible_actions(state, player):
@@ -390,7 +402,6 @@ class TTCEnv(gym.Env):
                 # turns the id into the piece to obtain the moves
                 piece_name = TTCEnv.ids_to_pieces[piece_id]
                 piece_type = piece_name[0].lower()
-                print(piece_type)
                 if piece_type == 'r':
                     moves = TTCEnv.rook_actions(state, position, player, attack=attack)
                 elif piece_type == 'b':
@@ -656,7 +667,7 @@ class TTCEnv(gym.Env):
         - disambiguation
         - capture of opponent's piece marked with 'x'
         """
-        piece = ChessEnv.ids_to_pieces[move['piece_id']]
+        piece = TTCEnv.ids_to_pieces[move['piece_id']]
         old_pos = move['pos']
         new_pos = move['new_pos']
         alpha = 'abcd'
