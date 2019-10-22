@@ -143,7 +143,7 @@ class TTCEnv(gym.Env):
         self.saved_states = {}
         pieces = np.linspace(1,4,4, dtype=int)
         # material that needs to be placed on the board
-        self.state['captured'] = {1: [1,2,3,4], -1: [-1,-2,-3,-4]}
+        self.state['not_in_play'] = {1: [1,2,3,4], -1: [-1,-2,-3,-4]}
         # number of pieces remaining to place
         self.state['initial_placements'] = {1: 3, -1: 3}
         # direction that a pawn can move in
@@ -168,12 +168,16 @@ class TTCEnv(gym.Env):
         move = TTCEnv.action_to_move(action, player)
         new_state, prev_piece, reward = TTCEnv.next_state(
             copy(state), move, player)
+        print (state['not_in_play'])
         # Keep track of movements
         piece_id = move['piece_id']
         #new_state['kr_moves'][piece_id] += 1
-        # Save material captured
+        # Save material not_in_play
         if prev_piece != 0:
-            new_state['captured'][player].append(prev_piece)
+            new_state['not_in_play'][-player].append(prev_piece)
+        # Update not_in_play pieces when a piece is placed
+        if (not TTCEnv.piece_in_board(state['board'], player, piece_id)):
+            new_state['not_in_play'][player].remove(piece_id)
         # Save current state
         self.saved_states = TTCEnv.encode_current_state
         (state, self.saved_states)
@@ -197,7 +201,7 @@ class TTCEnv(gym.Env):
         outfile = StringIO() if mode == 'ansi' else sys.stdout
 
         outfile.write('    ')
-        outfile.write('-' * 25)
+        outfile.write('-' * 14)
         outfile.write('\n')
 
         for i in range(3,-1,-1):
@@ -208,7 +212,7 @@ class TTCEnv(gym.Env):
                 outfile.write(' {} '.format(figure))
             outfile.write('|\n')
         outfile.write('    ')
-        outfile.write('-' * 25)
+        outfile.write('-' * 14)
         outfile.write('\n      a  b  c  d ')
         outfile.write('\n')
         outfile.write('\n')
@@ -226,7 +230,7 @@ class TTCEnv(gym.Env):
 
         outfile = StringIO() if mode == 'ansi' else sys.stdout
         outfile.write('    ')
-        outfile.write('-' * 25)
+        outfile.write('-' * 14)
         outfile.write('\n')
 
         for i in range(3,-1,-1):
@@ -247,7 +251,7 @@ class TTCEnv(gym.Env):
                     outfile.write(' {} '.format(figure))
             outfile.write('|\n')
         outfile.write('    ')
-        outfile.write('-' * 25)
+        outfile.write('-' * 14)
         outfile.write('\n      a  b  c  d ')
         outfile.write('\n')
         outfile.write('\n')
@@ -299,7 +303,6 @@ class TTCEnv(gym.Env):
         else:
             piece_id = move['piece_id']
             new_pos = move['new_pos']
-            print (new_pos)
             return 16*(abs(piece_id) - 1) + (new_pos[0]*4 + new_pos[1])
 
     @staticmethod
@@ -340,7 +343,7 @@ class TTCEnv(gym.Env):
             r, c = new_pos
             prev_piece = board[r, c]
         # if there isn't an old position (i.e. piece has been placed)
-        # remove piece from captured, set new position to piece
+        # remove piece from not_in_play, set new position to piece
         else:
             prev_piece = 0
         r,c = new_pos
@@ -362,10 +365,12 @@ class TTCEnv(gym.Env):
         return new_state, prev_piece, reward
 
     @staticmethod
+
     def piece_in_board(board, player, piece_id):
         '''
         Returns whether a given piece exists in a state's board
         '''
+
         piece_instances = np.where(board == piece_id)
         if (len(piece_instances[0]) == 0 and len(piece_instances[1]) == 0):
             return False
@@ -387,7 +392,7 @@ class TTCEnv(gym.Env):
         total_moves = []
         # add all moves that involve placing a piece onto the board
         placements = TTCEnv.get_empty_squares(state, player)
-        for piece_id in state['captured'][player]:
+        for piece_id in state['not_in_play'][player]:
             for placement in placements:
                 total_moves.append({
                 'piece_id': piece_id,
@@ -555,11 +560,6 @@ class TTCEnv(gym.Env):
             return [m for m in attack_moves if TTCEnv.pos_is_in_board(m)]
 
         else:
-            # moves only to empty squares
-            # no double move on first placement
-            if board[pos[0]+1*player, pos[1]] == 0:
-                go_to.append(pos + step_1)
-
             # attacks only opponent's pieces
             for m in reversed(attack_moves):
                 if not TTCEnv.pos_is_in_board(m):
@@ -626,10 +626,12 @@ class TTCEnv(gym.Env):
         move_list_flat = [TTCEnv.flatten_position(m) for m in move_list]
         move_flat = TTCEnv.flatten_position(move)
         return move_flat in move_list_flat
+
     @staticmethod
     def flatten_position(position):
         x, y = position[0], position[1]
         return x + y*4
+
     @staticmethod
     def boardise_position(position):
         x = position % 4
@@ -638,10 +640,17 @@ class TTCEnv(gym.Env):
 
     @staticmethod
     def pos_is_in_board(pos):
+        """
+        Returns whether a position exists in the board
+        """
         return not (pos[0] < 0 or pos[0] > 4 or pos[1] < 0 or pos[1] > 4)
 
     @staticmethod
     def squares_attacked(state, player):
+        """
+        Returns all positions on the board that can be attacked by the opposing
+        player
+        """
         opponent_moves = TTCEnv.get_possible_moves(state, -player, attack=True)
         attacked_pos = [m['new_pos'] for m in opponent_moves]
         return attacked_pos
@@ -651,12 +660,26 @@ class TTCEnv(gym.Env):
     """
     @staticmethod
     def is_own_piece(board, position, player):
+        """
+        Returns whether the piece at a given co-ordinate is owned by the current
+        player
+        """
         return TTCEnv.is_player_piece(board, position, player)
+
     @staticmethod
     def is_opponent_piece(board, position, player):
+        """
+        Returns whether the piece at a given co-ordinate is owned by the
+        opposing player
+        """
         return TTCEnv.is_player_piece(board, position, -player)
+
     @staticmethod
     def is_player_piece(board, position, player):
+        """
+        Returns whether a piece at a given co-ordinate is owned by a given
+        player
+        """
         x, y = position
         return  (board[x,y] != 0 and sign(board[x,y]) == player)
 

@@ -27,7 +27,6 @@ for i in range(num_episodes):
         for player in [player1, player2]:
             state = env.state
             moves = env.get_possible_moves(state, player)
-            print (moves)
             if len(moves) == 0:
                 a = env.resign_action()
                 print('<'*5, '@'*10, 'PLAYER RESIGNED', '@'*10, '>'*5)
