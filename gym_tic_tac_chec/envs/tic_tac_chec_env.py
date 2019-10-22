@@ -530,14 +530,15 @@ class TTCEnv(gym.Env):
         board = state['board']
         pos = np.array(position)
         go_to = []
+        pawn_direction = state['pawn_direction'][player]
 
         attack_moves = [
-            pos + np.array([1, -1])*player,
-            pos + np.array([1, +1])*player,
+            pos + np.array([1, -1])* pawn_direction,
+            pos + np.array([1, +1])* pawn_direction,
         ]
 
-        step_1 = np.array([1, 0]) * player
-        step_2 = np.array([2, 0]) * player
+        step_1 = np.array([1, 0]) * pawn_direction
+        step_2 = np.array([2, 0]) * pawn_direction
 
         if attack:
             return [m for m in attack_moves if TTCEnv.pos_is_in_board(m)]
