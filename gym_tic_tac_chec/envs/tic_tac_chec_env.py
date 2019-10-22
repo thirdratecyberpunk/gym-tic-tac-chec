@@ -152,6 +152,9 @@ class TTCEnv(gym.Env):
         self.state['on_move'] = 1
 
         # board
+        # board = [['P', '.', '.', '.']]
+        # board += [['.']*4] * 2
+        # board += [['.', 'p', '.', '.']]
         board = [["."] * 4] * 4
         self.state['board'] = np.array([[pieces_to_ids[x] for x in row] for row in board])
         self.state['prev_board'] = copy(self.state['board'])
@@ -168,7 +171,6 @@ class TTCEnv(gym.Env):
         move = TTCEnv.action_to_move(action, player)
         new_state, prev_piece, reward = TTCEnv.next_state(
             copy(state), move, player)
-        print (state['not_in_play'])
         # Keep track of movements
         piece_id = move['piece_id']
         #new_state['kr_moves'][piece_id] += 1
@@ -200,8 +202,7 @@ class TTCEnv(gym.Env):
         board = state['board']
         winnable_areas = TTCEnv.board_to_winnable_areas(board)
         for wa in winnable_areas:
-            print (wa)
-            if TTCEnv.is_row_winner(wa, player):
+            if TTCEnv.is_winnable_area_winner(wa, player):
                 return True
         return False
 
@@ -209,21 +210,21 @@ class TTCEnv(gym.Env):
         """
         Returns the board for a state as all possible winning collections
         """
-        rows = []
+        was = []
         # rows
         for row in board:
-            rows.append(row)
+            was.append(row)
         # columns
-        for x in range(4):
-            rows.append(board[:, x])
+        for x in range(board.shape[1]):
+            was.append(board[:, x])
         # left diagonal
-        rows.append(board.diagonal())
+        was.append(board.diagonal())
         # right diagonal
-        rows.append(np.fliplr(board).diagonal())
-        return rows
+        was.append(np.fliplr(board).diagonal())
+        return was
 
     @staticmethod
-    def is_row_winner(row, player):
+    def is_winnable_area_winner(row, player):
         """
         Returns whether a 'row' (can also be used for columns/diagonals)
         contains four pieces for a given player
@@ -357,6 +358,7 @@ class TTCEnv(gym.Env):
         square = action % 16
         column = square % 4
         row = (square - column) // 8
+        # TODO: try 64 rather than 16 for this value
         piece_id = (action - square) // 64 + 1
         return {
             'piece_id': piece_id * player,
@@ -372,7 +374,6 @@ class TTCEnv(gym.Env):
         """
         new_state = copy(state)
         new_state['prev_board'] = copy(state['board'])
-
         board = copy(new_state['board'])
         new_pos = np.array(move['new_pos'])
         piece_id = move['piece_id']
@@ -409,12 +410,10 @@ class TTCEnv(gym.Env):
         return new_state, prev_piece, reward
 
     @staticmethod
-
     def piece_in_board(board, player, piece_id):
         '''
         Returns whether a given piece exists in a state's board
         '''
-
         piece_instances = np.where(board == piece_id)
         if (len(piece_instances[0]) == 0 and len(piece_instances[1]) == 0):
             return False
@@ -435,6 +434,7 @@ class TTCEnv(gym.Env):
         board = state['board']
         total_moves = []
         # add all moves that involve placing a piece into an empty square
+        # TODO: uncomment this
         placements = TTCEnv.get_empty_squares(state, player)
         for piece_id in state['not_in_play'][player]:
             for placement in placements:
