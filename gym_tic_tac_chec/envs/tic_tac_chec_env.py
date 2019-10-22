@@ -186,8 +186,52 @@ class TTCEnv(gym.Env):
             TTCEnv.render_moves(state, move['piece_id'], [move], mode='human')
             print(' '*10, '>'*10, render_msg)
             # self._render()
-        return new_state, reward, False
+        # Check if the game is complete
+        if TTCEnv.is_game_complete(state, player):
+            return new_state, reward, True
+        else:
+            return new_state, reward, False
 
+    @staticmethod
+    def is_game_complete(state, player):
+        """
+        Returns whether a player has achieved four pieces in a row
+        """
+        board = state['board']
+        winnable_areas = TTCEnv.board_to_winnable_areas(board)
+        for wa in winnable_areas:
+            print (wa)
+            if TTCEnv.is_row_winner(wa, player):
+                return True
+        return False
+
+    def board_to_winnable_areas(board):
+        """
+        Returns the board for a state as all possible winning collections
+        """
+        rows = []
+        # rows
+        for row in board:
+            rows.append(row)
+        # columns
+        for x in range(4):
+            rows.append(board[:, x])
+        # left diagonal
+        rows.append(board.diagonal())
+        # right diagonal
+        rows.append(np.fliplr(board).diagonal())
+        return rows
+
+    @staticmethod
+    def is_row_winner(row, player):
+        """
+        Returns whether a 'row' (can also be used for columns/diagonals)
+        contains four pieces for a given player
+        """
+        if (player == -1):
+            return (all(x < 0 for x in row))
+        else:
+            return (all(x > 0 for x in row ))
 
     def render(self, mode='human', close=False):
         return TTCEnv.render_board(self.state, mode=mode, close=close)
