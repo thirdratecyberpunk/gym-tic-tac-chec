@@ -390,7 +390,7 @@ class TTCEnv(gym.Env):
         """
         board = state['board']
         total_moves = []
-        # add all moves that involve placing a piece onto the board
+        # add all moves that involve placing a piece into an empty square
         placements = TTCEnv.get_empty_squares(state, player)
         for piece_id in state['not_in_play'][player]:
             for placement in placements:
@@ -399,6 +399,7 @@ class TTCEnv(gym.Env):
                 'new_pos': placement,
                 'type': 'placement'
                 })
+        # TODO: implement 3 placements before moving permitted
         # add all moves that involve moving a piece on the board
         for position, piece_id in np.ndenumerate(board):
             # for all pieces that are not blank and have player alignment
@@ -547,34 +548,29 @@ class TTCEnv(gym.Env):
         pos = np.array(position)
         go_to = []
         pawn_direction = state['pawn_direction'][player]
-
+        # when a pawn attacks, it shifts diagonally (+/-1) on y
+        # and in pawn_direction on x
         attack_moves = [
-            pos + np.array([1, -1])* pawn_direction,
-            pos + np.array([1, +1])* pawn_direction,
+            pos + np.array([pawn_direction, -1]),
+            pos + np.array([pawn_direction, +1]),
         ]
+        # when a pawn moves, it always moves in pawn_direction by 1 (+/- 1) on x
+        # and nothing on y
+        step = [pos + np.array([pawn_direction, 0])]
 
-        step_1 = np.array([1, 0]) * pawn_direction
-        step_2 = np.array([2, 0]) * pawn_direction
-
+        # if attacking, return the valid attack moves
         if attack:
-            return [m for m in attack_moves if TTCEnv.pos_is_in_board(m)]
-
-        else:
-            # attacks only opponent's pieces
-            for m in reversed(attack_moves):
-                if not TTCEnv.pos_is_in_board(m):
-                    continue
-                elif TTCEnv.is_own_piece(board, m, player):
-                    continue
-                elif TTCEnv.is_opponent_piece(board, m, player):
+            for m in attack_moves:
+                add_bool, __ = TTCEnv.attacking_move(state, m, player)
+                if add_bool:
                     go_to.append(m)
-                    attack_moves.pop()
-                    continue
-                elif board[m[0], m[1]] == 0:
-                    continue
-                else:
-                    raise Exception("ERROR - PAWN ATTACK MOVES")
-            return go_to
+        # else, return step if it is valid
+        else:
+            for m in step:
+                add_bool, __ = TTCEnv.playable_move(state, m, player)
+                if add_bool:
+                    go_to.append(m)
+        return go_to
 
     @staticmethod
     def playable_move(state, move, player):
@@ -681,7 +677,7 @@ class TTCEnv(gym.Env):
         player
         """
         x, y = position
-        return  (board[x,y] != 0 and sign(board[x,y]) == player)
+        return (board[x,y] != 0 and sign(board[x,y]) == player)
 
     @staticmethod
     def convert_coords(move):
